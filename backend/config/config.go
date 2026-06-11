@@ -19,12 +19,6 @@ type Config struct {
 
 	RedisHost string
 	RedisPort string
-
-	RabbitMQUser     string
-	RabbitMQPassword string
-	RabbitMQHost     string
-	RabbitMQPort     string
-	RabbitMQURLRaw   string
 }
 
 func getEnv(key string) string {
@@ -46,12 +40,6 @@ func Load() {
 
 		RedisHost: getEnv("REDIS_HOST"),
 		RedisPort: getEnv("REDIS_PORT"),
-
-		RabbitMQUser:     getEnv("RABBITMQ_USER"),
-		RabbitMQPassword: getEnv("RABBITMQ_PASSWORD"),
-		RabbitMQHost:     getEnv("RABBITMQ_HOST"),
-		RabbitMQPort:     getEnv("RABBITMQ_PORT"),
-		RabbitMQURLRaw:   getEnv("RABBITMQ_URL"),
 	}
 
 	fmt.Println("Config loaded!")
@@ -59,11 +47,4 @@ func Load() {
 
 func (c *Config) RedisAddr() string {
 	return fmt.Sprintf("%s:%s", c.RedisHost, c.RedisPort)
-}
-
-func (c *Config) RabbitMQURL() string {
-	if c.RabbitMQURLRaw != "" {
-		return c.RabbitMQURLRaw
-	}
-	return fmt.Sprintf("amqp://%s:%s@%s:%s/", c.RabbitMQUser, c.RabbitMQPassword, c.RabbitMQHost, c.RabbitMQPort)
 }

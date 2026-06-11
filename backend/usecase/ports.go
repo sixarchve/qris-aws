@@ -17,10 +17,6 @@ type MerchantPrefetcher interface {
 	PrefetchRelatedMerchants(currentQRID string)
 }
 
-type PaymentPublisher interface {
-	PublishPaymentConfirmation(transactionID string) error
-}
-
 type NotificationPublisher interface {
 	PublishNotification(txID, merchantID, merchantName string, amount float64) error
 }

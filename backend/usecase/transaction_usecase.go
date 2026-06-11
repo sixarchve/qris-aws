@@ -16,9 +16,8 @@ type TransactionUsecase interface {
 	GetTransactionStatus(transactionIDStr string) (*entity.TransactionResponse, error)
 }
 
-// PaymentWorkerUsecase is used only by the payment worker goroutine to
-// finalise a queued payment. It is intentionally separate from
-// TransactionUsecase so it is never exposed as an HTTP route.
+// PaymentWorkerUsecase is kept as a narrow internal contract for code that
+// finalizes a payment without exposing that method on HTTP handlers.
 type PaymentWorkerUsecase interface {
 	ConfirmPayment(transactionIDStr string) (*entity.TransactionResponse, error)
 }
@@ -28,7 +27,6 @@ type transactionUsecase struct {
 	merchantRepo          repository.MerchantRepository
 	txCache               TransactionCache
 	merchantCache         MerchantCache
-	paymentPublisher      PaymentPublisher
 	notificationPublisher NotificationPublisher
 	qrisCodec             QRISCodec
 }
@@ -38,7 +36,6 @@ func NewTransactionUsecase(
 	merchantRepo repository.MerchantRepository,
 	txCache TransactionCache,
 	merchantCache MerchantCache,
-	paymentPublisher PaymentPublisher,
 	notificationPublisher NotificationPublisher,
 	qrisCodec QRISCodec,
 ) *transactionUsecase {
@@ -47,7 +44,6 @@ func NewTransactionUsecase(
 		merchantRepo:          merchantRepo,
 		txCache:               txCache,
 		merchantCache:         merchantCache,
-		paymentPublisher:      paymentPublisher,
 		notificationPublisher: notificationPublisher,
 		qrisCodec:             qrisCodec,
 	}
@@ -115,15 +111,12 @@ func (u *transactionUsecase) ConfirmPaymentAsync(transactionIDStr string) error 
 		return errors.New("invalid transaction id")
 	}
 
-	err := u.paymentPublisher.PublishPaymentConfirmation(transactionIDStr)
-	if err != nil {
-		return errors.New("failed to queue transaction: " + err.Error())
-	}
-	return nil
+	_, err := u.ConfirmPayment(transactionIDStr)
+	return err
 }
 
 // ConfirmPayment updates the transaction to SUCCESS, invalidates the cache,
-// and publishes a merchant notification. It is called by the payment worker.
+// and publishes a merchant notification.
 func (u *transactionUsecase) ConfirmPayment(transactionIDStr string) (*entity.TransactionResponse, error) {
 	if _, err := uuid.Parse(transactionIDStr); err != nil {
 		return nil, errors.New("invalid transaction id")

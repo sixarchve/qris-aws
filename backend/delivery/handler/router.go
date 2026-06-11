@@ -5,7 +5,6 @@ import (
 	"qris-latency-optimizer/internal/websocket"
 
 	"github.com/gin-gonic/gin"
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
 
 type Handlers struct {
@@ -19,9 +18,6 @@ type Handlers struct {
 func SetupRouter(h *Handlers, wsHub *websocket.Hub) *gin.Engine {
 	r := gin.Default()
 	middleware.CorsHandler(r)
-	r.Use(middleware.PrometheusMiddleware())
-
-	r.GET("/metrics", gin.WrapH(promhttp.HandlerFor(middleware.Registry, promhttp.HandlerOpts{})))
 
 	r.GET("/api/ping", h.Ping.Ping)
 	r.GET("/api/health", h.Health.Health)

@@ -432,68 +432,27 @@
                     <a href="/customer/" class="btn btn-secondary">Launch Customer App</a>
                 </div>
 
-                <!-- API & Metrics Card -->
+                <!-- API Status Card -->
                 <div class="card">
                     <div>
                         <div class="card-header">
                             <div class="card-icon" style="color: #a855f7;">
                                 <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
                             </div>
-                            <h3 class="card-title">System Status & Metrics</h3>
+                            <h3 class="card-title">System Status</h3>
                         </div>
                         <div class="card-body">
-                            Monitor the direct status and prometheus metrics export of the running Go API backend.
+                            Monitor the lightweight runtime dependencies used by the Go API backend.
                             <ul>
-                                <li>Health Uptime (Postgres, Redis, MQ status)</li>
-                                <li>Scrapable Prometheus Metrics exporter</li>
+                                <li>PostgreSQL source-of-truth status</li>
+                                <li>Redis cache availability</li>
                                 <li>Direct API connection diagnostics</li>
                             </ul>
                         </div>
                     </div>
                     <div style="display: flex; flex-direction: column; gap: 10px;">
-                        <a href="/api/health" class="btn btn-outline" target="_blank">Uptime Health Check</a>
-                        <a href="/metrics" class="btn btn-outline" target="_blank">Prometheus Exporter</a>
+                        <a href="/status/" class="btn btn-outline">Open Status Dashboard</a>
                     </div>
-                </div>
-
-            </div>
-        </section>
-
-        <!-- Monitoring Section -->
-        <section class="portals-section">
-            <h2 class="section-title">Observability Dashboards</h2>
-            <div class="grid">
-                
-                <!-- Grafana Card -->
-                <div class="card">
-                    <div>
-                        <div class="card-header">
-                            <div class="card-icon" style="color: #f97316;">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 3v18h18"/><path d="M18.7 8l-5.1 5.2-2.8-2.7L7 14.3"/></svg>
-                            </div>
-                            <h3 class="card-title">Grafana Observability</h3>
-                        </div>
-                        <div class="card-body">
-                            Access the provisioned Grafana dashboard to track system health, HTTP request latencies (P50, P95, P99), throughput rates, and cache/queue performance.
-                        </div>
-                    </div>
-                    <a href="#" id="grafana-link" class="btn btn-outline" target="_blank">Open Grafana Console</a>
-                </div>
-
-                <!-- Prometheus Card -->
-                <div class="card secondary-theme">
-                    <div>
-                        <div class="card-header">
-                            <div class="card-icon" style="color: #ef4444;">
-                                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M12 6v6l4 2"/></svg>
-                            </div>
-                            <h3 class="card-title">Prometheus Console</h3>
-                        </div>
-                        <div class="card-body">
-                            Check raw Prometheus scrape targets, status connections, and run direct PromQL queries against performance metric collectors.
-                        </div>
-                    </div>
-                    <a href="#" id="prometheus-link" class="btn btn-outline" target="_blank">Open Prometheus Console</a>
                 </div>
 
             </div>
@@ -502,7 +461,7 @@
         <!-- System Architecture Features -->
         <section class="specs-section">
             <h2 style="text-align: center; margin-bottom: 8px;">Architecture Details</h2>
-            <p style="text-align: center; color: var(--text-muted); max-width: 600px; margin: 0 auto 24px;">Under the hood, the QRIS async system utilizes a state-of-the-art tech stack configured for low latency.</p>
+            <p style="text-align: center; color: var(--text-muted); max-width: 600px; margin: 0 auto 24px;">Under the hood, the QRIS system uses a compact four-service stack configured for low runtime overhead.</p>
             <div class="specs-grid">
                 <div class="spec-item">
                     <span class="spec-icon">⚡</span>
@@ -515,29 +474,22 @@
                     <p class="spec-desc">Cache-aside layer for fast merchant prefetching and transaction state polling.</p>
                 </div>
                 <div class="spec-item">
-                    <span class="spec-icon">🐇</span>
-                    <h4 class="spec-title">RabbitMQ</h4>
-                    <p class="spec-desc">Asynchronous workers process payment updates, keeping HTTP response times under 10ms.</p>
+                    <span class="spec-icon">🗄️</span>
+                    <h4 class="spec-title">PostgreSQL</h4>
+                    <p class="spec-desc">Durable source of truth for merchants and payment transactions.</p>
                 </div>
                 <div class="spec-item">
-                    <span class="spec-icon">📊</span>
-                    <h4 class="spec-title">Prometheus Scraper</h4>
-                    <p class="spec-desc">Gathers request metrics and background processing performance numbers.</p>
+                    <span class="spec-icon">🌐</span>
+                    <h4 class="spec-title">Nginx Static Runtime</h4>
+                    <p class="spec-desc">Serves prebuilt React apps and proxies API/WebSocket traffic.</p>
                 </div>
             </div>
         </section>
 
         <!-- Footer -->
         <footer>
-            <p>&copy; 2026 QRIS System Gateway Portal. Built with Go, Redis, RabbitMQ & React. Reference documentation: <a href="/README.md" target="_blank">README.md</a>.</p>
+            <p>&copy; 2026 QRIS System Gateway Portal. Built with Go, PostgreSQL, Redis, Nginx & React. Reference documentation: <a href="/README.md" target="_blank">README.md</a>.</p>
         </footer>
     </div>
-
-    <!-- Dynamic hostname link resolver script -->
-    <script>
-        const host = window.location.hostname;
-        document.getElementById('grafana-link').href = `http://${host}:3000`;
-        document.getElementById('prometheus-link').href = `http://${host}:9090`;
-    </script>
 </body>
 </html>

@@ -1,6 +1,6 @@
 # QRIS Payment System
 
-Full-stack QRIS payment simulation with async payment confirmation.
+Full-stack QRIS payment simulation with a lightweight Docker runtime.
 
 The project includes:
 
@@ -9,10 +9,7 @@ The project includes:
 - Customer scanner/payment app built with React + Vite
 - PostgreSQL as the source of truth
 - Redis cache for merchant lookup and transaction-status polling
-- RabbitMQ queue for asynchronous payment confirmation
 - Merchant WebSocket notifications for successful payments
-- Prometheus + Grafana monitoring
-- K6 load-test scripts
 
 ## Project Structure
 
@@ -20,11 +17,8 @@ The project includes:
 backend/          Go API, domain/usecase/repository code, QRIS payload logic
 frontend/         Merchant dashboard, QRIS generation UI
 customer-app/     Customer QR scanner and payment confirmation UI
-k6/               Load-test scripts
-grafana/          Provisioned dashboard and datasource config
 report-purpose/   Architecture, flow, and report notes
 docker-compose.yml
-prometheus.yml
 ```
 
 ## Stack
@@ -32,11 +26,8 @@ prometheus.yml
 - Go, Gin, GORM
 - PostgreSQL 15
 - Redis 7
-- RabbitMQ management image
 - React 19 + Vite
-- Prometheus
-- Grafana
-- K6
+- Nginx
 
 ## Architecture Summary
 
@@ -49,12 +40,12 @@ prometheus.yml
   payloads are generated or QRID lookups happen.
 - Transaction status uses cache-aside:
   Redis first, PostgreSQL fallback, then Redis repopulation.
-- Payment confirmation publishes work to RabbitMQ and returns
-  `PROCESSING` quickly. A background worker updates PostgreSQL to `SUCCESS` and
-  invalidates the transaction cache.
-- Successful confirmations publish merchant notifications to RabbitMQ. A
-  notification worker sends them to the merchant dashboard through `/ws`.
-- Prometheus records server latency, worker metrics, and cache metrics.
+- Payment confirmation updates PostgreSQL to `SUCCESS`, invalidates the Redis
+  transaction cache, and returns the existing confirmation response shape.
+- Successful confirmations send merchant notifications directly through the
+  in-process WebSocket hub at `/ws`.
+- Docker Compose runs four services by default: Nginx, backend, PostgreSQL,
+  and Redis.
 
 ## Environment
 
@@ -73,26 +64,15 @@ DB_NAME=qrisdatabase
 REDIS_HOST=localhost
 REDIS_PORT=6379
 
-RABBITMQ_USER=guest
-RABBITMQ_PASSWORD=guest
-RABBITMQ_HOST=localhost
-RABBITMQ_PORT=5672
-
 WEBSOCKET_READ_DEADLINE=5m
 WEBSOCKET_WRITE_DEADLINE=10s
 WEBSOCKET_IDLE_CHECK_INTERVAL=1m
 WEBSOCKET_IDLE_THRESHOLD=4m
 WEBSOCKET_MAX_MESSAGE_SIZE=65536
-
-GF_AUTH_ANONYMOUS_ENABLED=true
-GF_AUTH_ANONYMOUS_ORG_ROLE=Admin
-GF_SECURITY_ADMIN_USER=admin
-GF_SECURITY_ADMIN_PASSWORD=12345
 ```
 
 Docker Compose overrides service hostnames internally. For example, the backend
-container receives `DB_HOST=db`, `REDIS_HOST=redis`, and
-`RABBITMQ_HOST=rabbitmq`.
+container receives `DB_HOST=db` and `REDIS_HOST=redis`.
 
 ## Run With Docker Compose
 
@@ -104,15 +84,13 @@ docker compose up -d
 
 This starts:
 
-- Nginx reverse proxy on `http://localhost` (port 80)
+- Nginx static server and reverse proxy on `http://localhost` (port 80)
   - Merchant dashboard: `http://localhost/merchant/`
   - Customer app: `http://localhost/customer/`
   - Backend API: `http://localhost/` and `/api/`
-- PostgreSQL on `localhost:5432`
-- Redis on `localhost:6379`
-- RabbitMQ management on `http://localhost:15672`
-- Prometheus on `http://localhost:9090`
-- Grafana on `http://localhost:3000`
+- Backend API service on the internal Compose network
+- PostgreSQL on the internal Compose network
+- Redis on the internal Compose network with `64mb` max memory and LRU eviction
 
 Useful checks:
 
@@ -120,7 +98,6 @@ Useful checks:
 curl http://localhost/api/ping
 curl http://localhost/api/health
 curl http://localhost/api/merchants
-curl http://localhost/metrics
 ```
 
 ## Run Apps Manually
@@ -129,14 +106,14 @@ For local development loops, start only the dependency containers you need, then
 run the backend and apps on the host:
 
 ```bash
-docker compose up -d db redis rabbitmq redisinsight pgadmin
+docker compose up -d db redis
 ```
 
 If the full Compose stack is already running, stop the app container you want to
 replace locally first, for example:
 
 ```bash
-docker compose stop golang
+docker compose stop backend
 ```
 
 Backend:
@@ -180,7 +157,6 @@ GET  /api/qris?merchant_id=<merchant_uuid>&amount=<amount>
 GET  /api/transactions/:id
 GET  /api/ws/status?merchant_id=<merchant_uuid>
 GET  /ws?merchant_id=<merchant_uuid>
-GET  /metrics
 POST /api/transactions/scan
 POST /api/transactions/:id/confirm
 ```
@@ -253,8 +229,8 @@ to PostgreSQL on miss or corrupted cache, and returns the transaction response.
 POST /api/transactions/:id/confirm
 ```
 
-The backend validates the UUID, publishes `transaction_id` to RabbitMQ queue
-`payment_confirmations`, and immediately returns:
+The backend validates the UUID, updates the transaction to `SUCCESS`, invalidates
+the Redis transaction cache, sends any WebSocket notification, and returns:
 
 ```json
 {
@@ -266,11 +242,8 @@ The backend validates the UUID, publishes `transaction_id` to RabbitMQ queue
 }
 ```
 
-The payment worker consumes the message, updates the transaction to `SUCCESS`,
-deletes the old Redis transaction cache, and publishes a merchant notification.
-A notification worker consumes that event and pushes a
-`transaction_notification` message to connected merchant dashboard WebSocket
-clients.
+The response still uses `PROCESSING` for frontend compatibility, but the
+lightweight runtime no longer requires a message broker container.
 
 ## Merchant WebSocket Notifications
 
@@ -280,10 +253,9 @@ The merchant dashboard connects to:
 GET /ws?merchant_id=<merchant_uuid>
 ```
 
-When a transaction reaches `SUCCESS`, the backend publishes a notification to
-RabbitMQ queue `merchant_notifications`. The notification worker sends a
-`transaction_notification` message to every connected dashboard for that
-merchant. If the merchant is disconnected, the WebSocket hub keeps a small
+When a transaction reaches `SUCCESS`, the backend sends a
+`transaction_notification` message directly to every connected dashboard for
+that merchant. If the merchant is disconnected, the WebSocket hub keeps a small
 in-memory backlog and flushes it on reconnect.
 
 Check connection state and pending notifications with:
@@ -302,12 +274,6 @@ transaction:<uuid>        TTL 10 minutes
 Redis is used for faster lookups and lower database read load. PostgreSQL
 remains authoritative.
 
-## Monitoring
-
-Prometheus scrapes `/metrics` every 15 seconds. Grafana is provisioned with a
-system health dashboard showing service uptime, request rate, error rate,
-response latency percentiles, and Go runtime metrics.
-
 The `/api/health` endpoint checks all dependencies and returns:
 
 ```json
@@ -316,34 +282,12 @@ The `/api/health` endpoint checks all dependencies and returns:
   "timestamp": "2026-06-10T23:00:00+07:00",
   "services": {
     "postgres":  { "status": "ok" },
-    "redis":     { "status": "ok" },
-    "rabbitmq":  { "status": "ok" }
+    "redis":     { "status": "ok" }
   }
 }
 ```
 
 Returns HTTP `200` when all services are healthy, `503` when any is degraded.
-
-Metrics exposed:
-
-```text
-http_requests_total
-http_request_duration_seconds
-```
-
-Go runtime metrics (goroutines, heap, GC) are included automatically via the
-Prometheus Go collector.
-
-## Load Testing With K6
-
-Scripts live in `k6/`.
-
-| Command | Scenario |
-| --- | --- |
-| `./k6/run.sh qris` | QRIS generation load test |
-| `./k6/run.sh async` | Async scan + confirm flow |
-
-The scripts run K6 through Docker using the `grafana/k6` image.
 
 ## Phone Camera Notes
 

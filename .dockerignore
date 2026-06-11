@@ -1,0 +1,12 @@
+.git
+.env
+**/node_modules
+**/dist
+**/.vite
+**/.cache
+backend/tmp
+grafana
+prometheus.yml
+prometheus_rules.yml
+report-purpose
+aws

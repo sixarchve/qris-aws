@@ -15,13 +15,33 @@ import (
 	"qris-latency-optimizer/internal/qris"
 	"qris-latency-optimizer/internal/websocket"
 	"qris-latency-optimizer/repository/postgres"
-	"qris-latency-optimizer/repository/rabbitmq"
 	"qris-latency-optimizer/repository/redis"
 	"qris-latency-optimizer/usecase"
-	"qris-latency-optimizer/worker"
 )
 
-func setupInfrastructure() *rabbitmq.Broker {
+type websocketNotificationPublisher struct {
+	hub *websocket.Hub
+}
+
+func (p websocketNotificationPublisher) PublishNotification(txID, merchantID, merchantName string, amount float64) error {
+	if p.hub == nil {
+		return nil
+	}
+
+	notification := map[string]interface{}{
+		"type":           "transaction_notification",
+		"transaction_id": txID,
+		"merchant_id":    merchantID,
+		"merchant_name":  merchantName,
+		"amount":         amount,
+		"status":         "SUCCESS",
+		"timestamp":      time.Now(),
+	}
+
+	return p.hub.SendToMerchant(merchantID, notification)
+}
+
+func setupInfrastructure() {
 	config.Load()
 
 	postgres.ConnectDB()
@@ -30,13 +50,11 @@ func setupInfrastructure() *rabbitmq.Broker {
 	redis.ConnectRedis()
 	redis.WarmUpCache()
 	fmt.Println("Redis connected & cache warmed")
-
-	return rabbitmq.ConnectRabbitMQ()
 }
 
 func main() {
 
-	broker := setupInfrastructure()
+	setupInfrastructure()
 	websocket.InitWSConfig()
 
 	merchantRepo := postgres.NewMerchantRepository(postgres.DB)
@@ -48,13 +66,13 @@ func main() {
 
 	merchantUsecase := usecase.NewMerchantUsecase(merchantRepo)
 	qrisUsecase := usecase.NewQRISUsecase(merchantRepo, merchantCache, merchantPrefetcher, qrisCodec)
+	wsHub := websocket.NewHub()
 	txUsecase := usecase.NewTransactionUsecase(
 		txRepo,
 		merchantRepo,
 		txCache,
 		merchantCache,
-		broker,
-		broker,
+		websocketNotificationPublisher{hub: wsHub},
 		qrisCodec,
 	)
 
@@ -63,16 +81,11 @@ func main() {
 		QRIS:        handler.NewQRISHandler(qrisUsecase),
 		Transaction: handler.NewTransactionHandler(txUsecase),
 		Ping:        handler.NewPingHandler(),
-		Health:      handler.NewHealthHandler(broker),
+		Health:      handler.NewHealthHandler(),
 	}
 
-	wsHub := websocket.NewHub()
 	go wsHub.Run()
 	fmt.Println("WebSocket Hub initialized")
-
-	worker.StartPaymentConsumer(broker, txUsecase)
-	worker.StartNotificationConsumer(broker, wsHub)
-	fmt.Println("RabbitMQ workers started")
 
 	r := handler.SetupRouter(handlers, wsHub)
 
@@ -99,6 +112,7 @@ func main() {
 		log.Printf("Server forced to shutdown: %v", err)
 	}
 
-	broker.Close()
 	fmt.Println("Shutdown complete")
 }
+
+var _ usecase.NotificationPublisher = websocketNotificationPublisher{}
