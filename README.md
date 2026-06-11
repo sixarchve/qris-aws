@@ -41,7 +41,8 @@ docker-compose.yml
 - Transaction status uses cache-aside:
   Redis first, PostgreSQL fallback, then Redis repopulation.
 - Payment confirmation updates PostgreSQL to `SUCCESS`, invalidates the Redis
-  transaction cache, and returns the existing confirmation response shape.
+  transaction cache, writes a local JSON receipt, and returns the existing
+  confirmation response shape.
 - Successful confirmations send merchant notifications directly through the
   in-process WebSocket hub at `/ws`.
 - Docker Compose runs four services by default: Nginx, backend, PostgreSQL,
@@ -63,6 +64,8 @@ DB_NAME=qrisdatabase
 
 REDIS_HOST=localhost
 REDIS_PORT=6379
+
+RECEIPT_DIR=../receipts
 
 WEBSOCKET_READ_DEADLINE=5m
 WEBSOCKET_WRITE_DEADLINE=10s
@@ -244,6 +247,11 @@ the Redis transaction cache, sends any WebSocket notification, and returns:
 
 The response still uses `PROCESSING` for frontend compatibility, but the
 lightweight runtime no longer requires a message broker container.
+
+After a successful confirmation, the backend writes a local JSON receipt to
+`RECEIPT_DIR`. Docker Compose maps this to the repo-root `./receipts` folder for
+testing. The transaction response/status includes `receipt_path` after the file
+is generated.
 
 ## Merchant WebSocket Notifications
 

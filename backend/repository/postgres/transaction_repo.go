@@ -28,3 +28,7 @@ func (r *transactionRepo) UpdateStatus(id string, status string) (int64, error) 
 	result := r.db.Model(&entity.Transaction{}).Where("id = ?", id).Update("status", status)
 	return result.RowsAffected, result.Error
 }
+
+func (r *transactionRepo) UpdateReceiptPath(id string, receiptPath string) error {
+	return r.db.Model(&entity.Transaction{}).Where("id = ?", id).Update("receipt_path", receiptPath).Error
+}

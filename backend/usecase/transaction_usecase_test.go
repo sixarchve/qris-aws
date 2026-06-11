@@ -65,6 +65,13 @@ func (r *fakeTransactionRepo) UpdateStatus(id string, status string) (int64, err
 	return 0, nil
 }
 
+func (r *fakeTransactionRepo) UpdateReceiptPath(id string, receiptPath string) error {
+	if tx, ok := r.byID[id]; ok {
+		tx.ReceiptPath = receiptPath
+	}
+	return nil
+}
+
 type fakeMerchantCache struct {
 	merchants map[string]*entity.Merchant
 	cached    []entity.Merchant
@@ -107,6 +114,15 @@ func (p *fakeNotificationPublisher) PublishNotification(txID, merchantID, mercha
 	return nil
 }
 
+type fakeReceiptStore struct {
+	saved []string
+}
+
+func (s *fakeReceiptStore) SaveReceipt(tx entity.Transaction) (string, error) {
+	s.saved = append(s.saved, tx.ID.String())
+	return "receipts/receipt_" + tx.ID.String() + ".json", nil
+}
+
 type fakeQRISCodec struct {
 	merchantID string
 	amount     int
@@ -121,7 +137,7 @@ func (c fakeQRISCodec) ParsePayload(payload string) (string, int, error) {
 	return c.merchantID, c.amount, c.parseErr
 }
 
-func newTransactionUsecaseFixture(merchant *entity.Merchant) (*transactionUsecase, *fakeTransactionRepo, *fakeTransactionCache, *fakeMerchantCache, *fakeNotificationPublisher) {
+func newTransactionUsecaseFixture(merchant *entity.Merchant) (*transactionUsecase, *fakeTransactionRepo, *fakeTransactionCache, *fakeMerchantCache, *fakeNotificationPublisher, *fakeReceiptStore) {
 	txRepo := &fakeTransactionRepo{byID: map[string]*entity.Transaction{}, updateRows: 1}
 	merchantRepo := &fakeMerchantRepo{
 		byID:   map[uuid.UUID]*entity.Merchant{merchant.ID: merchant},
@@ -130,6 +146,7 @@ func newTransactionUsecaseFixture(merchant *entity.Merchant) (*transactionUsecas
 	txCache := &fakeTransactionCache{transactions: map[string]*entity.Transaction{}}
 	merchantCache := &fakeMerchantCache{merchants: map[string]*entity.Merchant{}}
 	notificationPublisher := &fakeNotificationPublisher{published: make(chan string, 1)}
+	receiptStore := &fakeReceiptStore{}
 
 	u := NewTransactionUsecase(
 		txRepo,
@@ -137,15 +154,16 @@ func newTransactionUsecaseFixture(merchant *entity.Merchant) (*transactionUsecas
 		txCache,
 		merchantCache,
 		notificationPublisher,
+		receiptStore,
 		fakeQRISCodec{merchantID: merchant.QRID, amount: 15000},
 	)
 
-	return u, txRepo, txCache, merchantCache, notificationPublisher
+	return u, txRepo, txCache, merchantCache, notificationPublisher, receiptStore
 }
 
 func TestTransactionUsecaseScanQRByQRIDCacheMiss(t *testing.T) {
 	merchant := &entity.Merchant{ID: uuid.New(), QRID: "TEST001", MerchantName: "Kantin", IsActive: true}
-	u, txRepo, txCache, merchantCache, _ := newTransactionUsecaseFixture(merchant)
+	u, txRepo, txCache, merchantCache, _, _ := newTransactionUsecaseFixture(merchant)
 
 	resp, err := u.ScanQR(entity.ScanQRRequest{
 		QRPayload:  "payload",
@@ -171,7 +189,7 @@ func TestTransactionUsecaseScanQRByQRIDCacheMiss(t *testing.T) {
 
 func TestTransactionUsecaseScanQRByUUID(t *testing.T) {
 	merchant := &entity.Merchant{ID: uuid.New(), QRID: "TEST001", MerchantName: "Kantin", IsActive: true}
-	u, _, _, merchantCache, _ := newTransactionUsecaseFixture(merchant)
+	u, _, _, merchantCache, _, _ := newTransactionUsecaseFixture(merchant)
 
 	resp, err := u.ScanQR(entity.ScanQRRequest{
 		QRPayload:  "payload",
@@ -191,7 +209,7 @@ func TestTransactionUsecaseScanQRByUUID(t *testing.T) {
 
 func TestTransactionUsecaseScanQRValidationErrors(t *testing.T) {
 	merchant := &entity.Merchant{ID: uuid.New(), QRID: "TEST001", MerchantName: "Kantin", IsActive: true}
-	u, _, _, _, _ := newTransactionUsecaseFixture(merchant)
+	u, _, _, _, _, _ := newTransactionUsecaseFixture(merchant)
 
 	u.qrisCodec = fakeQRISCodec{parseErr: errors.New("invalid qris payload")}
 	if _, err := u.ScanQR(entity.ScanQRRequest{QRPayload: "bad", MerchantID: merchant.QRID, Amount: 15000}); err == nil {
@@ -211,7 +229,7 @@ func TestTransactionUsecaseScanQRValidationErrors(t *testing.T) {
 
 func TestTransactionUsecaseConfirmPaymentAsyncConfirmsTransaction(t *testing.T) {
 	merchant := &entity.Merchant{ID: uuid.New(), QRID: "TEST001", MerchantName: "Kantin", IsActive: true}
-	u, txRepo, txCache, _, notificationPublisher := newTransactionUsecaseFixture(merchant)
+	u, txRepo, txCache, _, notificationPublisher, receiptStore := newTransactionUsecaseFixture(merchant)
 	txID := uuid.New()
 	txRepo.byID[txID.String()] = &entity.Transaction{
 		ID:         txID,
@@ -231,6 +249,12 @@ func TestTransactionUsecaseConfirmPaymentAsyncConfirmsTransaction(t *testing.T) 
 	if len(txCache.deleted) != 1 || txCache.deleted[0] != txID.String() {
 		t.Fatalf("expected cache delete for %s, got %+v", txID, txCache.deleted)
 	}
+	if len(receiptStore.saved) != 1 || receiptStore.saved[0] != txID.String() {
+		t.Fatalf("expected receipt for %s, got %+v", txID, receiptStore.saved)
+	}
+	if txRepo.byID[txID.String()].ReceiptPath == "" {
+		t.Fatal("expected receipt path to be saved")
+	}
 
 	select {
 	case publishedID := <-notificationPublisher.published:
@@ -244,7 +268,7 @@ func TestTransactionUsecaseConfirmPaymentAsyncConfirmsTransaction(t *testing.T) 
 
 func TestTransactionUsecaseConfirmPaymentUpdatesCacheAndNotification(t *testing.T) {
 	merchant := &entity.Merchant{ID: uuid.New(), QRID: "TEST001", MerchantName: "Kantin", IsActive: true}
-	u, txRepo, txCache, _, notificationPublisher := newTransactionUsecaseFixture(merchant)
+	u, txRepo, txCache, _, notificationPublisher, receiptStore := newTransactionUsecaseFixture(merchant)
 	txID := uuid.New()
 	txRepo.byID[txID.String()] = &entity.Transaction{
 		ID:         txID,
@@ -262,8 +286,14 @@ func TestTransactionUsecaseConfirmPaymentUpdatesCacheAndNotification(t *testing.
 	if resp.Status != "SUCCESS" {
 		t.Fatalf("expected SUCCESS, got %s", resp.Status)
 	}
+	if resp.ReceiptPath == "" {
+		t.Fatal("expected receipt path in response")
+	}
 	if len(txCache.deleted) != 1 || txCache.deleted[0] != txID.String() {
 		t.Fatalf("expected cache delete for %s, got %+v", txID, txCache.deleted)
+	}
+	if len(receiptStore.saved) != 1 || receiptStore.saved[0] != txID.String() {
+		t.Fatalf("expected receipt for %s, got %+v", txID, receiptStore.saved)
 	}
 
 	select {
@@ -278,7 +308,7 @@ func TestTransactionUsecaseConfirmPaymentUpdatesCacheAndNotification(t *testing.
 
 func TestTransactionUsecaseGetTransactionStatusCacheHitAndMiss(t *testing.T) {
 	merchant := &entity.Merchant{ID: uuid.New(), QRID: "TEST001", MerchantName: "Kantin", IsActive: true}
-	u, txRepo, txCache, _, _ := newTransactionUsecaseFixture(merchant)
+	u, txRepo, txCache, _, _, _ := newTransactionUsecaseFixture(merchant)
 	cachedID := uuid.New()
 	txCache.transactions[cachedID.String()] = &entity.Transaction{
 		ID:         cachedID,

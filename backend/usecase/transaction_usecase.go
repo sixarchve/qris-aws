@@ -2,6 +2,7 @@ package usecase
 
 import (
 	"errors"
+	"log"
 	"qris-latency-optimizer/domain/entity"
 	"qris-latency-optimizer/domain/repository"
 	"time"
@@ -28,6 +29,7 @@ type transactionUsecase struct {
 	txCache               TransactionCache
 	merchantCache         MerchantCache
 	notificationPublisher NotificationPublisher
+	receiptStore          ReceiptStore
 	qrisCodec             QRISCodec
 }
 
@@ -37,6 +39,7 @@ func NewTransactionUsecase(
 	txCache TransactionCache,
 	merchantCache MerchantCache,
 	notificationPublisher NotificationPublisher,
+	receiptStore ReceiptStore,
 	qrisCodec QRISCodec,
 ) *transactionUsecase {
 	return &transactionUsecase{
@@ -45,6 +48,7 @@ func NewTransactionUsecase(
 		txCache:               txCache,
 		merchantCache:         merchantCache,
 		notificationPublisher: notificationPublisher,
+		receiptStore:          receiptStore,
 		qrisCodec:             qrisCodec,
 	}
 }
@@ -101,6 +105,7 @@ func (u *transactionUsecase) ScanQR(req entity.ScanQRRequest) (*entity.Transacti
 		MerchantID:    merchant.ID.String(),
 		Amount:        tx.Amount,
 		Status:        tx.Status,
+		ReceiptPath:   tx.ReceiptPath,
 		CreatedAt:     tx.CreatedAt,
 		CachedFrom:    false,
 	}, nil
@@ -137,6 +142,19 @@ func (u *transactionUsecase) ConfirmPayment(transactionIDStr string) (*entity.Tr
 		return nil, errors.New("transaction not found")
 	}
 
+	if u.receiptStore != nil {
+		receiptPath, err := u.receiptStore.SaveReceipt(*tx)
+		if err != nil {
+			log.Printf("Failed to save receipt for transaction %s: %v", transactionIDStr, err)
+		} else if receiptPath != "" {
+			if err := u.txRepo.UpdateReceiptPath(transactionIDStr, receiptPath); err != nil {
+				log.Printf("Failed to update receipt path for transaction %s: %v", transactionIDStr, err)
+			} else {
+				tx.ReceiptPath = receiptPath
+			}
+		}
+	}
+
 	go func() {
 		_ = u.notificationPublisher.PublishNotification(
 			tx.ID.String(),
@@ -151,6 +169,7 @@ func (u *transactionUsecase) ConfirmPayment(transactionIDStr string) (*entity.Tr
 		MerchantID:    tx.MerchantID.String(),
 		Amount:        tx.Amount,
 		Status:        tx.Status,
+		ReceiptPath:   tx.ReceiptPath,
 		CreatedAt:     tx.CreatedAt,
 	}, nil
 }
@@ -167,6 +186,7 @@ func (u *transactionUsecase) GetTransactionStatus(transactionIDStr string) (*ent
 			MerchantID:    tx.MerchantID.String(),
 			Amount:        tx.Amount,
 			Status:        tx.Status,
+			ReceiptPath:   tx.ReceiptPath,
 			CreatedAt:     tx.CreatedAt,
 			CachedFrom:    true,
 		}, nil
@@ -184,6 +204,7 @@ func (u *transactionUsecase) GetTransactionStatus(transactionIDStr string) (*ent
 		MerchantID:    tx.MerchantID.String(),
 		Amount:        tx.Amount,
 		Status:        tx.Status,
+		ReceiptPath:   tx.ReceiptPath,
 		CreatedAt:     tx.CreatedAt,
 		CachedFrom:    false,
 	}, nil

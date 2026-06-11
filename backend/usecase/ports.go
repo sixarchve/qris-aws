@@ -21,6 +21,10 @@ type NotificationPublisher interface {
 	PublishNotification(txID, merchantID, merchantName string, amount float64) error
 }
 
+type ReceiptStore interface {
+	SaveReceipt(tx entity.Transaction) (string, error)
+}
+
 type QRISCodec interface {
 	GeneratePayload(amount int, merchantName string, qrID string) (string, error)
 	ParsePayload(payload string) (string, int, error)

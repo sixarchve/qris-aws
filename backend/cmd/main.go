@@ -14,6 +14,7 @@ import (
 	"qris-latency-optimizer/delivery/handler"
 	"qris-latency-optimizer/internal/qris"
 	"qris-latency-optimizer/internal/websocket"
+	"qris-latency-optimizer/repository/local"
 	"qris-latency-optimizer/repository/postgres"
 	"qris-latency-optimizer/repository/redis"
 	"qris-latency-optimizer/usecase"
@@ -63,6 +64,7 @@ func main() {
 	txCache := redis.NewTransactionCache()
 	merchantPrefetcher := redis.NewMerchantPrefetcher()
 	qrisCodec := qris.NewCodec()
+	receiptStore := local.NewReceiptStore(config.App.ReceiptDir)
 
 	merchantUsecase := usecase.NewMerchantUsecase(merchantRepo)
 	qrisUsecase := usecase.NewQRISUsecase(merchantRepo, merchantCache, merchantPrefetcher, qrisCodec)
@@ -73,6 +75,7 @@ func main() {
 		txCache,
 		merchantCache,
 		websocketNotificationPublisher{hub: wsHub},
+		receiptStore,
 		qrisCodec,
 	)
 

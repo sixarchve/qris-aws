@@ -19,10 +19,19 @@ type Config struct {
 
 	RedisHost string
 	RedisPort string
+
+	ReceiptDir string
 }
 
 func getEnv(key string) string {
 	return os.Getenv(key)
+}
+
+func getEnvDefault(key string, fallback string) string {
+	if value := os.Getenv(key); value != "" {
+		return value
+	}
+	return fallback
 }
 
 func Load() {
@@ -40,6 +49,8 @@ func Load() {
 
 		RedisHost: getEnv("REDIS_HOST"),
 		RedisPort: getEnv("REDIS_PORT"),
+
+		ReceiptDir: getEnvDefault("RECEIPT_DIR", "../receipts"),
 	}
 
 	fmt.Println("Config loaded!")
