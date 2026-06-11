@@ -1,0 +1,169 @@
+services:
+  nginx:
+    image: nginx:alpine
+    container_name: qris_nginx
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./nginx/nginx.conf:/etc/nginx/conf.d/default.conf
+      - ./home:/usr/share/nginx/html
+    depends_on:
+      - golang
+      - frontend
+      - customer_app
+
+  golang:
+    image: golang:1.26-alpine
+    container_name: qris_golang
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    volumes:
+      - ./backend:/app/backend
+    working_dir: /app/backend
+    command: go run cmd/main.go
+    env_file:
+      - .env
+    environment:
+      DB_USER: ${DB_USER}
+      DB_PASSWORD: ${DB_PASSWORD}
+      DB_HOST: db
+      DB_PORT: ${DB_PORT}
+      DB_NAME: ${DB_NAME}
+      REDIS_HOST: redis
+      REDIS_PORT: ${REDIS_PORT}
+      RABBITMQ_USER: ${RABBITMQ_USER}
+      RABBITMQ_PASSWORD: ${RABBITMQ_PASSWORD}
+      RABBITMQ_HOST: rabbitmq
+      RABBITMQ_PORT: ${RABBITMQ_PORT}
+      RABBITMQ_URL: amqp://${RABBITMQ_USER}:${RABBITMQ_PASSWORD}@rabbitmq:${RABBITMQ_PORT}/
+      WEBSOCKET_READ_DEADLINE: ${WEBSOCKET_READ_DEADLINE}
+      WEBSOCKET_WRITE_DEADLINE: ${WEBSOCKET_WRITE_DEADLINE}
+      WEBSOCKET_IDLE_CHECK_INTERVAL: ${WEBSOCKET_IDLE_CHECK_INTERVAL}
+      WEBSOCKET_IDLE_THRESHOLD: ${WEBSOCKET_IDLE_THRESHOLD}
+      WEBSOCKET_MAX_MESSAGE_SIZE: ${WEBSOCKET_MAX_MESSAGE_SIZE}
+    healthcheck:
+      test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/health"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      rabbitmq:
+        condition: service_healthy
+
+  frontend:
+    image: node:20-alpine
+    container_name: qris_web
+    restart: unless-stopped
+    ports:
+      - "5173:5173"
+    volumes:
+      - ./frontend:/app/frontend
+    working_dir: /app/frontend
+    environment:
+      VITE_BACKEND_TARGET: http://golang:8080
+      VITE_WS_TARGET: ws://golang:8080
+    command: sh -c "npm install && npm run dev -- --host"
+    depends_on:
+      - golang
+
+  customer_app:
+    image: node:20-alpine
+    container_name: qris_customer_app
+    restart: unless-stopped
+    ports:
+      - "5174:5174"
+    volumes:
+      - ./customer-app:/app/customer-app
+    working_dir: /app/customer-app
+    command: sh -c "npm install && npm run dev -- --host"
+    depends_on:
+      - golang
+
+  db:
+    image: postgres:15-alpine
+    container_name: qris_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ${DB_USER}
+      POSTGRES_PASSWORD: ${DB_PASSWORD}
+      POSTGRES_DB: ${DB_NAME}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${DB_USER}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  redis:
+    image: redis:7-alpine
+    container_name: qris_redis
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+
+  rabbitmq:
+    image: rabbitmq:3-management-alpine
+    container_name: qris_rabbitmq
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_PASSWORD}
+    healthcheck:
+      test: ["CMD", "rabbitmq-diagnostics", "-q", "ping"]
+      interval: 10s
+      timeout: 10s
+      retries: 5
+
+  prometheus:
+    image: prom/prometheus:latest
+    container_name: qris_prometheus
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./prometheus_rules.yml:/etc/prometheus/prometheus_rules.yml
+    command:
+      - '--config.file=/etc/prometheus/prometheus.yml'
+    depends_on:
+      - golang
+
+  grafana:
+    image: grafana/grafana:latest
+    container_name: qris_grafana
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: ${GF_AUTH_ANONYMOUS_ENABLED}
+      GF_AUTH_ANONYMOUS_ORG_ROLE: ${GF_AUTH_ANONYMOUS_ORG_ROLE}
+      GF_SECURITY_ADMIN_USER: ${GF_SECURITY_ADMIN_USER}
+      GF_SECURITY_ADMIN_PASSWORD: ${GF_SECURITY_ADMIN_PASSWORD}
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./grafana/provisioning:/etc/grafana/provisioning
+      - ./grafana/dashboards:/var/lib/grafana/dashboards
+    depends_on:
+      - prometheus
+
+volumes:
+  postgres_data:
+  grafana_data:
