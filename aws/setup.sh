@@ -30,5 +30,3 @@ systemctl enable docker
 systemctl start docker
 
 usermod -aG docker ubuntu
-
-echo "Docker setup complete" > /var/log/user-data-status.log
