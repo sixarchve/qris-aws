@@ -17,7 +17,10 @@ import (
 	"qris-latency-optimizer/repository/local"
 	"qris-latency-optimizer/repository/postgres"
 	"qris-latency-optimizer/repository/redis"
+	s3store "qris-latency-optimizer/repository/s3"
 	"qris-latency-optimizer/usecase"
+
+	awsconfig "github.com/aws/aws-sdk-go-v2/config"
 )
 
 type websocketNotificationPublisher struct {
@@ -64,7 +67,26 @@ func main() {
 	txCache := redis.NewTransactionCache()
 	merchantPrefetcher := redis.NewMerchantPrefetcher()
 	qrisCodec := qris.NewCodec()
-	receiptStore := local.NewReceiptStore(config.App.ReceiptDir)
+
+	var receiptStore usecase.ReceiptStore
+	localStore := local.NewReceiptStore("receipts")
+
+	if config.App.IsS3Configured() {
+		fmt.Println("S3 is configured! Initializing S3 receipt store (dual-mode enabled)...")
+		awsCfg, err := awsconfig.LoadDefaultConfig(context.Background(),
+			awsconfig.WithRegion(config.App.AWSRegion),
+		)
+		if err != nil {
+			log.Printf("Failed to load AWS configuration: %v. Falling back to local-only mode.", err)
+			receiptStore = localStore
+		} else {
+			s3Store := s3store.NewS3ReceiptStore(awsCfg, config.App.S3BucketName)
+			receiptStore = local.NewCompositeReceiptStore(s3Store, localStore)
+		}
+	} else {
+		fmt.Println("S3 is not fully configured. Using local-only receipt store.")
+		receiptStore = localStore
+	}
 
 	merchantUsecase := usecase.NewMerchantUsecase(merchantRepo)
 	qrisUsecase := usecase.NewQRISUsecase(merchantRepo, merchantCache, merchantPrefetcher, qrisCodec)
@@ -78,6 +100,7 @@ func main() {
 		receiptStore,
 		qrisCodec,
 	)
+
 
 	handlers := &handler.Handlers{
 		Merchant:    handler.NewMerchantHandler(merchantUsecase),

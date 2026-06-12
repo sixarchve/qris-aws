@@ -32,9 +32,13 @@ services:
       WEBSOCKET_IDLE_CHECK_INTERVAL: ${WEBSOCKET_IDLE_CHECK_INTERVAL}
       WEBSOCKET_IDLE_THRESHOLD: ${WEBSOCKET_IDLE_THRESHOLD}
       WEBSOCKET_MAX_MESSAGE_SIZE: ${WEBSOCKET_MAX_MESSAGE_SIZE}
-      RECEIPT_DIR: /app/receipts
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
+      AWS_REGION: ${AWS_REGION}
+      S3_BUCKET_NAME: ${S3_BUCKET_NAME}
     volumes:
-      - ./receipts:/app/receipts
+
+      - ./backend/receipts:/app/receipts
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/health"]
       interval: 10s

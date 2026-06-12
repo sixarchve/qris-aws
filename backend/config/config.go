@@ -20,7 +20,10 @@ type Config struct {
 	RedisHost string
 	RedisPort string
 
-	ReceiptDir string
+	AWSAccessKeyID     string
+	AWSSecretAccessKey string
+	AWSRegion          string
+	S3BucketName       string
 }
 
 func getEnv(key string) string {
@@ -50,8 +53,12 @@ func Load() {
 		RedisHost: getEnv("REDIS_HOST"),
 		RedisPort: getEnv("REDIS_PORT"),
 
-		ReceiptDir: getEnvDefault("RECEIPT_DIR", "../receipts"),
+		AWSAccessKeyID:     getEnv("AWS_ACCESS_KEY_ID"),
+		AWSSecretAccessKey: getEnv("AWS_SECRET_ACCESS_KEY"),
+		AWSRegion:          getEnvDefault("AWS_REGION", "ap-southeast-1"),
+		S3BucketName:       getEnv("S3_BUCKET_NAME"),
 	}
+
 
 	fmt.Println("Config loaded!")
 }
@@ -59,3 +66,8 @@ func Load() {
 func (c *Config) RedisAddr() string {
 	return fmt.Sprintf("%s:%s", c.RedisHost, c.RedisPort)
 }
+
+func (c *Config) IsS3Configured() bool {
+	return c.AWSAccessKeyID != "" && c.AWSSecretAccessKey != "" && c.S3BucketName != ""
+}
+
