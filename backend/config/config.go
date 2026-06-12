@@ -26,6 +26,7 @@ type Config struct {
 
 	AWSAccessKeyID     string
 	AWSSecretAccessKey string
+	AWSSessionToken    string
 	AWSRegion          string
 	S3BucketName       string
 }
@@ -81,6 +82,7 @@ func Load() {
 
 		AWSAccessKeyID:     getEnv("AWS_ACCESS_KEY_ID"),
 		AWSSecretAccessKey: getEnv("AWS_SECRET_ACCESS_KEY"),
+		AWSSessionToken:    getEnv("AWS_SESSION_TOKEN"),
 		AWSRegion:          getEnvDefault("AWS_REGION", "ap-southeast-1"),
 		S3BucketName:       getEnv("S3_BUCKET_NAME"),
 	}
