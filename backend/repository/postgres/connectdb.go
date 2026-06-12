@@ -1,7 +1,9 @@
 package postgres
 
 import (
+	"log"
 	"qris-latency-optimizer/domain/entity"
+	"time"
 
 	"gorm.io/driver/postgres"
 	"gorm.io/gorm"
@@ -11,7 +13,17 @@ var DB *gorm.DB
 
 func ConnectDB() {
 	var err error
-	DB, err = gorm.Open(postgres.Open(LoadDatabaseConfig()), &gorm.Config{})
+	dsn := LoadDatabaseConfig()
+
+	// Retry loop for Postgres connection robustness
+	for i := 1; i <= 5; i++ {
+		DB, err = gorm.Open(postgres.Open(dsn), &gorm.Config{})
+		if err == nil {
+			break
+		}
+		log.Printf("PostgreSQL connection failed (attempt %d/5): %v. Retrying in 2s...", i, err)
+		time.Sleep(2 * time.Second)
+	}
 
 	if err != nil {
 		panic(err)

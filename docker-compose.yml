@@ -9,7 +9,7 @@ services:
       - "80:80"
     depends_on:
       backend:
-        condition: service_healthy
+        condition: service_started
 
   backend:
     build:
@@ -20,24 +20,28 @@ services:
     env_file:
       - .env
     environment:
+      RUNNING_IN_DOCKER: "true"
       DB_USER: ${DB_USER}
       DB_PASSWORD: ${DB_PASSWORD}
-      DB_HOST: db
+      DB_HOST: ${DB_HOST}
       DB_PORT: ${DB_PORT}
       DB_NAME: ${DB_NAME}
-      REDIS_HOST: redis
+      DB_SSLMODE: ${DB_SSLMODE}
+      REDIS_HOST: ${REDIS_HOST}
       REDIS_PORT: ${REDIS_PORT}
+      REDIS_PASSWORD: ${REDIS_PASSWORD}
+      REDIS_USE_TLS: ${REDIS_USE_TLS}
       WEBSOCKET_READ_DEADLINE: ${WEBSOCKET_READ_DEADLINE}
       WEBSOCKET_WRITE_DEADLINE: ${WEBSOCKET_WRITE_DEADLINE}
       WEBSOCKET_IDLE_CHECK_INTERVAL: ${WEBSOCKET_IDLE_CHECK_INTERVAL}
       WEBSOCKET_IDLE_THRESHOLD: ${WEBSOCKET_IDLE_THRESHOLD}
       WEBSOCKET_MAX_MESSAGE_SIZE: ${WEBSOCKET_MAX_MESSAGE_SIZE}
+      RECEIPT_DIR: /app/receipts
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY}
       AWS_REGION: ${AWS_REGION}
       S3_BUCKET_NAME: ${S3_BUCKET_NAME}
     volumes:
-
       - ./backend/receipts:/app/receipts
     healthcheck:
       test: ["CMD", "wget", "--no-verbose", "--tries=1", "--spider", "http://localhost:8080/api/health"]
@@ -45,16 +49,15 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
-    depends_on:
-      db:
-        condition: service_healthy
-      redis:
-        condition: service_healthy
 
   db:
     image: postgres:15-alpine
     container_name: qris_postgres
     restart: unless-stopped
+    ports:
+      - "5432:5432"
+    profiles:
+      - local
     environment:
       POSTGRES_USER: ${DB_USER}
       POSTGRES_PASSWORD: ${DB_PASSWORD}
@@ -71,6 +74,10 @@ services:
     image: redis:7-alpine
     container_name: qris_redis
     restart: unless-stopped
+    ports:
+      - "6379:6379"
+    profiles:
+      - local
     command:
       - redis-server
       - --maxmemory
@@ -89,3 +96,4 @@ services:
 
 volumes:
   postgres_data:
+

@@ -50,23 +50,32 @@ docker-compose.yml
 
 ## Environment
 
-Create a repo-root `.env` file before running Docker Compose. The checked-in
-`.gitignore` intentionally ignores `.env`.
+Create a repo-root `.env` file before running. The checked-in `.gitignore` intentionally ignores `.env`.
 
 Example:
 
 ```env
+# Database Config
 DB_USER=user
 DB_PASSWORD=user
-DB_HOST=localhost
+DB_HOST=localhost       # Set to AWS RDS endpoint in production
 DB_PORT=5432
 DB_NAME=qrisdatabase
+DB_SSLMODE=disable      # Set to "require" in production (for RDS)
 
-REDIS_HOST=localhost
+# Redis Config
+REDIS_HOST=localhost     # Set to AWS ElastiCache endpoint in production
 REDIS_PORT=6379
+REDIS_PASSWORD=         # Set ElastiCache AUTH password if configured
+REDIS_USE_TLS=false     # Set to true for ElastiCache Transit Encryption
 
-RECEIPT_DIR=../receipts
+# AWS S3 Config (for transaction receipts)
+AWS_ACCESS_KEY_ID=
+AWS_SECRET_ACCESS_KEY=
+AWS_REGION=ap-southeast-1
+S3_BUCKET_NAME=
 
+# WebSockets Configuration
 WEBSOCKET_READ_DEADLINE=5m
 WEBSOCKET_WRITE_DEADLINE=10s
 WEBSOCKET_IDLE_CHECK_INTERVAL=1m
@@ -74,46 +83,54 @@ WEBSOCKET_IDLE_THRESHOLD=4m
 WEBSOCKET_MAX_MESSAGE_SIZE=65536
 ```
 
-Docker Compose overrides service hostnames internally. For example, the backend
-container receives `DB_HOST=db` and `REDIS_HOST=redis`.
+> [!NOTE]
+> **Host Auto-Resolution in Docker:**
+> When the backend runs inside a Docker container, it automatically checks if `DB_HOST`/`REDIS_HOST` is set to `localhost` or `127.0.0.1`. If it is, it automatically resolves the hosts internally to `db` and `redis` container hostnames. This allows you to keep `localhost` in your `.env` file for both local Docker runs and host-level binary testing.
+
+---
 
 ## Run With Docker Compose
 
-From the repo root:
-
+### Local Development (including Postgres and Redis containers)
+To spin up all services locally, run:
 ```bash
-docker compose up -d
+docker compose --profile local up -d
 ```
 
 This starts:
-
 - Nginx static server and reverse proxy on `http://localhost` (port 80)
   - Merchant dashboard: `http://localhost/merchant/`
   - Customer app: `http://localhost/customer/`
   - Backend API: `http://localhost/` and `/api/`
-- Backend API service on the internal Compose network
-- PostgreSQL on the internal Compose network
-- Redis on the internal Compose network with `64mb` max memory and LRU eviction
+- Backend API service (on port `8080` internally)
+- PostgreSQL (`qris_postgres`) exposed to the host on port `5432`
+- Redis (`qris_redis`) exposed to the host on port `6379`
 
-Useful checks:
-
+Useful health checks:
 ```bash
 curl http://localhost/api/ping
 curl http://localhost/api/health
 curl http://localhost/api/merchants
 ```
 
+### Production Deployment (AWS EC2 - bypassing local database containers)
+When deploying to an EC2 instance connecting directly to RDS and ElastiCache, define your production endpoints in `.env` and start compose normally:
+```bash
+docker compose up -d
+```
+*Only Nginx and the Go backend will start. The local `db` and `redis` containers will remain off, leaving the host system completely free.*
+
+---
+
 ## Run Apps Manually
 
-For local development loops, start only the dependency containers you need, then
-run the backend and apps on the host:
+For local development loops, start only the database and cache containers you need, then run the backend and frontend apps on your host OS:
 
 ```bash
-docker compose up -d db redis
+docker compose --profile local up -d db redis
 ```
 
-If the full Compose stack is already running, stop the app container you want to
-replace locally first, for example:
+If the full Compose stack is already running, stop the app container you want to replace locally first, for example:
 
 ```bash
 docker compose stop backend

@@ -20,6 +20,10 @@ type Config struct {
 	RedisHost string
 	RedisPort string
 
+	DBSslMode     string
+	RedisPassword string
+	RedisUseTLS   bool
+
 	AWSAccessKeyID     string
 	AWSSecretAccessKey string
 	AWSRegion          string
@@ -43,22 +47,43 @@ func Load() {
 		log.Println("No .env file found, using environment variables")
 	}
 
-	App = &Config{
-		DBHost:     getEnv("DB_HOST"),
-		DBUser:     getEnv("DB_USER"),
-		DBPassword: getEnv("DB_PASSWORD"),
-		DBName:     getEnv("DB_NAME"),
-		DBPort:     getEnv("DB_PORT"),
+	dbHost := getEnv("DB_HOST")
+	redisHost := getEnv("REDIS_HOST")
 
-		RedisHost: getEnv("REDIS_HOST"),
-		RedisPort: getEnv("REDIS_PORT"),
+	// Detect if running inside docker container
+	inDocker := os.Getenv("RUNNING_IN_DOCKER") == "true"
+	if !inDocker {
+		if _, err := os.Stat("/.dockerenv"); err == nil {
+			inDocker = true
+		}
+	}
+
+	if inDocker {
+		if dbHost == "localhost" || dbHost == "127.0.0.1" || dbHost == "" {
+			dbHost = "db"
+		}
+		if redisHost == "localhost" || redisHost == "127.0.0.1" || redisHost == "" {
+			redisHost = "redis"
+		}
+	}
+
+	App = &Config{
+		DBHost:        dbHost,
+		DBUser:        getEnv("DB_USER"),
+		DBPassword:    getEnv("DB_PASSWORD"),
+		DBName:        getEnv("DB_NAME"),
+		DBPort:        getEnv("DB_PORT"),
+		DBSslMode:     getEnvDefault("DB_SSLMODE", "disable"),
+		RedisHost:     redisHost,
+		RedisPort:     getEnv("REDIS_PORT"),
+		RedisPassword: getEnv("REDIS_PASSWORD"),
+		RedisUseTLS:   getEnv("REDIS_USE_TLS") == "true",
 
 		AWSAccessKeyID:     getEnv("AWS_ACCESS_KEY_ID"),
 		AWSSecretAccessKey: getEnv("AWS_SECRET_ACCESS_KEY"),
 		AWSRegion:          getEnvDefault("AWS_REGION", "ap-southeast-1"),
 		S3BucketName:       getEnv("S3_BUCKET_NAME"),
 	}
-
 
 	fmt.Println("Config loaded!")
 }

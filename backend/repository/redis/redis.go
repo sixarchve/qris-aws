@@ -2,6 +2,7 @@ package redis
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
 	"qris-latency-optimizer/config"
 	"time"
@@ -21,9 +22,18 @@ const (
 
 // ConnectRedis - koneksi ke Redis
 func ConnectRedis() {
-	RedisClient = goredis.NewClient(&goredis.Options{
-		Addr: config.App.RedisAddr(),
-	})
+	opts := &goredis.Options{
+		Addr:     config.App.RedisAddr(),
+		Password: config.App.RedisPassword,
+	}
+
+	if config.App.RedisUseTLS {
+		opts.TLSConfig = &tls.Config{
+			MinVersion: tls.VersionTLS12,
+		}
+	}
+
+	RedisClient = goredis.NewClient(opts)
 
 	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer cancel()

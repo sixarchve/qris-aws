@@ -3,17 +3,14 @@
 ```mermaid
 flowchart TD
     A[Backend Start] --> B[Load repo-root .env or container env]
-    B --> C[Connect PostgreSQL]
+    B --> C[Connect PostgreSQL with Retry Loop]
     C --> D[Create pgcrypto extension]
     D --> E[AutoMigrate merchants and transactions]
     E --> F[Seed default merchants]
-    F --> G[Connect Redis]
+    F --> G[Connect Redis with TLS/Auth]
     G --> H[Warm merchant cache]
-    H --> I[Connect RabbitMQ]
-    I --> IQ[Declare payment_confirmations and merchant_notifications]
-    IQ --> WH[Start WebSocket hub]
-    WH --> J[Start payment and notification workers]
-    J --> K[Start Gin HTTP server on 8080]
+    H --> WH[Start WebSocket hub]
+    WH --> K[Start Gin HTTP server on 8080]
     K --> L[Start Nginx Proxy on 80]
 
     MD[Merchant Dashboard] --> ML[GET /api/merchants]
@@ -49,24 +46,12 @@ flowchart TD
     ST5 --> ST6[Return DB transaction]
 
     CA --> AC1[POST /api/transactions/:id/confirm]
-    AC1 --> AC2[Publish transaction_id to RabbitMQ]
-    AC2 --> AC3[Return PROCESSING immediately]
-    AC2 --> AC4[Worker consumes payment_confirmations queue]
-    AC4 --> AC5[Update PostgreSQL status to SUCCESS]
-    AC5 --> AC6[Delete Redis transaction cache]
-    AC6 --> NQ[Publish merchant notification]
-    NQ --> NW[Notification worker consumes merchant_notifications]
-    NW --> WS[Push transaction_notification over /ws]
+    AC1 --> AC2[Update PostgreSQL status to SUCCESS]
+    AC2 --> AC3[Delete Redis transaction cache]
+    AC3 --> AC4[Save Receipt to S3 and/or local storage]
+    AC4 --> AC5[Trigger asynchronous WebSocket broadcast]
+    AC5 --> WS[Push transaction_notification over /ws]
     WS --> MD
-    AC6 --> ST1
-
-    PR[Prometheus] -->|Every 15s| MT[GET /metrics]
-    MT --> M1[HTTP latency and request metrics]
-    MT --> M3[Worker metrics]
-    MT --> M4[Cache metrics]
-    MT --> M5[Go runtime metrics]
-
-    GF[Grafana Dashboard] --> PR
 
     MD --> WSC[GET /ws?merchant_id]
     WSC --> WH
@@ -78,17 +63,12 @@ flowchart TD
     NginxRouter -->|/customer/| CA
     NginxRouter -->|/api/| API[Go Backend API]
     NginxRouter -->|/ws| WH
-
-    K6[K6 Tests] --> N1[Target Nginx port 80]
 ```
 
 ## Notes
 
-- PostgreSQL is the source of truth.
-- Redis caches active merchants and recent transactions.
-- RabbitMQ powers the asynchronous confirmation path.
-- RabbitMQ also carries merchant notification events.
-- `/ws?merchant_id=<uuid>` streams successful payment notifications to the
-  merchant dashboard.
-- `/api/ws/status` exposes connection and pending-notification counts.
-- `/confirm` returns `PROCESSING`; the worker later writes `SUCCESS`.
+- **PostgreSQL** is the source of truth for all merchants and transactions.
+- **Redis** caches active merchants and recent transactions.
+- **S3 Receipt Store** saves transaction receipts securely to AWS S3. A local store serves as a backup or when S3 credentials are not supplied.
+- **WebSockets** stream successful payment notifications to the merchant dashboard. `/api/ws/status` exposes websocket statistics.
+- **Nginx** handles reverse proxying. Its dependency on the backend is set to `service_started`, enabling Nginx to start immediately and expose the port `/api/health` even if the backend is booting or degraded.

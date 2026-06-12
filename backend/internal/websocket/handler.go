@@ -96,7 +96,6 @@ func (h *Hub) HandleWebSocket(c *gin.Context) {
 		return
 	}
 
-	// ✅ CORRECT: Use SetReadLimit (available in v1.5.3)
 	conn.SetReadLimit(wsConfig.MaxMessageSize)
 
 	client := &Client{
